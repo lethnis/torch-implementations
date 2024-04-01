@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torchview import draw_graph
-from torchsummary import summary
 
 
 class ConvBlock(nn.Module):
@@ -160,28 +158,3 @@ class Inceptionv1(nn.Module):
         x = torch.flatten(x, start_dim=1)
 
         return self.fc1(x)
-
-
-def testConvBlock():
-    x = torch.randn(64, 1, 28, 28)
-    model = ConvBlock(1, 3, 3, 1, 1)
-    print(model(x).shape)
-    draw_graph(model, input_data=x, save_graph=True, expand_nested=True)
-    del model, x
-
-
-def testInceptionBlock():
-    x = torch.randn(32, 192, 28, 28)
-    model = InceptionBlock(192, 64, 96, 128, 16, 32, 32)
-    print(model(x).shape)
-    draw_graph(model, input_data=x, expand_nested=True, save_graph=True)
-    del model, x
-
-
-def testInceptionv1():
-    x = torch.randn(1, 3, 224, 224)
-    model = Inceptionv1(3, 1000)
-    print(model(x).shape)
-    draw_graph(model, input_data=x, depth=3, expand_nested=True, save_graph=True)
-    summary(model, (3, 224, 224))
-    del model, x

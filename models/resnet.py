@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torchview import draw_graph
-from torchsummary import summary
 
 from ._options import Resnet_options
 
@@ -277,6 +275,7 @@ class ResNet(nn.Module):
     @classmethod
     def from_options(self, options: Resnet_options, in_channels: int = 3, num_classes: int = 1000):
         """Creates an instance of ResNet from original paper.
+        Options are: channels list, repetitions list, expansion factor, is bottleneck
 
         Args:
             options (Resnet_options): options of the model (ResNet18/34/50/101/152)
@@ -284,23 +283,6 @@ class ResNet(nn.Module):
             num_classes (int): output number of classes
 
         Returns:
-            nn.Module: an instance of chosen ResNet model
+            ResNet: an instance of chosen ResNet model
         """
         return ResNet(*RESNET_OPTIONS[options], in_channels=in_channels, num_classes=num_classes)
-
-
-def test_ResNetBlock():
-    x = torch.randn(1, 256, 56, 56)
-    model = ResNetBlock(256, 128, 4, True, 2)
-    print(model(x).shape)
-    draw_graph(model, x, expand_nested=True, save_graph=True)
-    del model, x
-
-
-def test_ResNet():
-    x = torch.randn(1, 3, 224, 224)
-    model = ResNet.create_from_options("ResNet50", 3, 1000)
-    print(model(x).shape)
-    draw_graph(model, x, depth=5, expand_nested=True, save_graph=True)
-    summary(model, (3, 224, 224))
-    del model, x

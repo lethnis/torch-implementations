@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torchview import draw_graph
-from torchinfo import summary
 
 
 class DepthWiseSeparable(nn.Module):
@@ -106,20 +104,3 @@ class MobileNetv1(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, start_dim=1)
         return self.fc1(x)
-
-
-def test_DepthWiseSeparable():
-    x = torch.randn(1, 8, 128, 128)
-    model = DepthWiseSeparable(8, 16, 2)
-    print(model(x).shape)
-    draw_graph(model, x, expand_nested=True, save_graph=True)
-    del x, model
-
-
-def test_MobileNetv1():
-    x = torch.randn(1, 3, 128, 128)
-    model = MobileNetv1(3, 10, 0.25)
-    print(model(x).shape)
-    draw_graph(model, x, expand_nested=True, save_graph=True)
-    summary(model, x.shape)
-    del x, model
