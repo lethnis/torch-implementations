@@ -210,15 +210,17 @@ class ResNet(nn.Module):
         self.blocks = nn.Sequential(*blocks)
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
+
+        # for binary classification we need only 1 output
+        if num_classes == 2:
+            num_classes = 1
+
         self.fc1 = nn.Linear(in_features=channels_list[-1] * expansion, out_features=num_classes)
 
     def forward(self, x):
         x = self.relu(self.batchnorm1(self.conv1(x)))
-        x = self.maxpool(x)
 
-        x = self.blocks(x)
-
-        x = self.avgpool(x)
+        x = self.avgpool(self.blocks(self.maxpool(x)))
 
         x = torch.flatten(input=x, start_dim=1)
 

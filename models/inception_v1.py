@@ -143,6 +143,11 @@ class Inceptionv1(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.dropout = nn.Dropout(0.4)
+
+        # for binary classification we need only 1 output
+        if num_classes == 2:
+            num_classes = 1
+
         self.fc1 = nn.Linear(1024, num_classes)
 
     def forward(self, x):

@@ -214,6 +214,10 @@ class DenseNet(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool2d(1)
 
+        # for binary classification we need only 1 output
+        if num_classes == 2:
+            num_classes = 1
+
         self.fc = nn.Linear(in_features=block_in_channels, out_features=num_classes)
 
     def forward(self, x):
