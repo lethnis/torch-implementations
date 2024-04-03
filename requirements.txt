@@ -4,5 +4,10 @@ torchaudio
 torchview
 torchsummary
 torchinfo
+torchmetrics
+
+mlxtend
 
 graphviz
+matplotlib
+tqdm
