@@ -275,7 +275,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     @classmethod
-    def from_options(self, options: Resnet_options, in_channels: int = 3, num_classes: int = 1000):
+    def from_options(cls, options: Resnet_options, in_channels: int = 3, num_classes: int = 1000):
         """Creates an instance of ResNet from original paper.
         Options are: channels list, repetitions list, expansion factor, is bottleneck
 

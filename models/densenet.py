@@ -221,14 +221,12 @@ class DenseNet(nn.Module):
         self.fc = nn.Linear(in_features=block_in_channels, out_features=num_classes)
 
     def forward(self, x):
-        x = self.relu(self.bn1(self.conv(x)))
-        x = self.maxpool(x)
+        x = self.maxpool(self.relu(self.bn1(self.conv(x))))
 
         for layer in self.deep_nn:
             x = layer(x)
 
-        x = self.relu(self.bn2(x))
-        x = self.avgpool(x)
+        x = self.avgpool(self.relu(self.bn2(x)))
 
         x = torch.flatten(x, start_dim=1)
 
@@ -236,7 +234,7 @@ class DenseNet(nn.Module):
 
     @classmethod
     def from_options(
-        self, options: Densenet_options, in_channels: int = 3, num_classes: int = 1000, start_channels: int = 64
+        cls, options: Densenet_options, in_channels: int = 3, num_classes: int = 1000, start_channels: int = 64
     ):
         """Creates an instance of ResNet from the original paper.
         Options are: repetitions in every DenseBlock, growth factor, compression factor, is bottleneck.
