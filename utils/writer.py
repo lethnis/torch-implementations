@@ -24,36 +24,36 @@ class Writer:
 
         self.project_path = os.path.join("runs", project_name)
         os.makedirs(self.project_path)
-        print(f"Saving project to the {self.project_path}")
 
     def update(self, **kwargs):
-        """Update history dict. In arguments write 'train_accuracy=train_accuracy' etc."""
+        """Update history dict. In arguments expected 'train_accuracy=train_accuracy' etc."""
         for k, v in kwargs.items():
             self.history[k].append(v)
 
-    def get_pairs(self):
-        """Helper function to extract keys from history."""
-        keys = self.history.keys()
-        keys = [key.split("_")[-1] for key in keys]
-        keys = set([key for key in keys if keys.count(key) == 2])
-        return keys
-
     def plot_pairs(self):
         """Saves plots to the project path. Plots will contain accuracy/loss curves"""
-        keys = self.get_pairs()
+
+        keys = ["loss", "acc", "accuracy"]
 
         for key in keys:
-            plt.figure(figsize=(5, 5))
-            plt.plot(self.history.get("train_" + key), label="train", linewidth=2)
-            plt.plot(self.history.get("test_" + key), label="test", linewidth=2)
-            plt.ylabel(key)
-            plt.xlabel("epoch")
-            plt.legend()
-            plt.grid()
-            plt.xticks(range(len(self.history.get("train_" + key))))
-            plt.tight_layout()
-            plt.savefig(os.path.join(self.project_path, key + ".png"))
-            plt.close()
+            # try to plot at least train progress
+            if self.history.get("train_" + key, None) is not None:
+
+                plt.figure(figsize=(5, 5))
+                plt.plot(self.history.get("train_" + key), label="train", linewidth=2)
+
+                # try to plot val progress if available
+                if self.history.get("val_" + key, None) is not None:
+                    plt.plot(self.history.get("val_" + key), label="val", linewidth=2)
+
+                plt.ylabel(key)
+                plt.xlabel("epoch")
+                plt.legend()
+                plt.grid()
+                plt.xticks(range(len(self.history.get("train_" + key))))
+                plt.tight_layout()
+                plt.savefig(os.path.join(self.project_path, key + ".png"))
+                plt.close()
 
     def check_project_name(self, project_name: str):
         """Function to check if project with that name already exists to prevent overwriting.
@@ -92,7 +92,38 @@ class Writer:
         return self.check_project_name(project_name + "_2")
 
     def save_to_csv(self):
+        """Save history to a csv file in project directory."""
+
         with open(os.path.join(self.project_path, "history.csv"), "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(self.history.keys())
             writer.writerows(zip(*self.history.values()))
+
+    def is_best(self, monitor: str) -> bool:
+        """Check history to decide if on current epoch model has best accuracy or loss.
+
+        Args:
+            monitor (str): parameter to decide if model is getting better.
+
+        Returns:
+            bool: True if model is getting better else False.
+        """
+
+        # loss should be at lowest overall to return True
+        if monitor == "val_loss":
+            if self.history.get("val_loss", None) is not None and len(self.history["val_loss"]) > 1:
+                if self.history["val_loss"][-1] < min(self.history["val_loss"][:-1]):
+                    return True
+
+        # accuracy should be at highest overall to return True
+        elif monitor == "val_acc":
+            if self.history.get("val_acc", None) is not None and len(self.history["val_acc"]) > 1:
+                if self.history["val_acc"][-1] > max(self.history["val_acc"][:-1]):
+                    return True
+
+        elif monitor == "val_accuracy":
+            if self.history.get("val_accuracy", None) is not None and len(self.history["val_accuracy"]) > 1:
+                if self.history["val_accuracy"][-1] > max(self.history["val_accuracy"][:-1]):
+                    return True
+
+        return False
