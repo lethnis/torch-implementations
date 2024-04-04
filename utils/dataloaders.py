@@ -10,12 +10,11 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 
-import torchvision
 from torchvision import transforms
 
 
 class ImageClassificationDataset(Dataset):
-    def __init__(self, directory: Path, transform: torchvision.transforms = None, name: str = "train"):
+    def __init__(self, directory: Path, transform: transforms.Compose = None, name: str = "train"):
         """Warning: use one of ImageClassificationDataset.from_splitted
         or ImageClassificationDataset.from_full methods.
 
@@ -24,7 +23,7 @@ class ImageClassificationDataset(Dataset):
             2. for 'val' and 'test' will be applied only Resize, Normalize and ToTensor.
 
         Args:
-            directory (Path): path to the directory with classes
+            directory (Path): path to the directory with classes.
             transform (transforms, optional): transformations that will be applied. Defaults to None.
             name (str, optional): name of the dataset. Needed for sanity check. Defaults to "train".
 
@@ -32,7 +31,7 @@ class ImageClassificationDataset(Dataset):
             directory (Path): path to the directory with classes.
             paths (list[Path]): list of paths to the images.
             name (str): name of the dataset.
-            transform (torchvision.transforms): list of transformations that will be applied.
+            transform (transforms.Compose): list of transformations that will be applied.
             classes (list[str]): list of classes.
             class_to_idx (dict[str, int]): dict of pairs class and their index.
             idx_to_class (dict[int, str]): dict of pairs index and their class.
@@ -51,7 +50,7 @@ class ImageClassificationDataset(Dataset):
         self.targets = torch.tensor([self.class_to_idx[i.parent.name] for i in self.paths])
 
     @classmethod
-    def from_splitted(cls, directory: str, transform: torchvision.transforms = None):
+    def from_splitted(cls, directory: str, transform: transforms.Compose = None):
         """Generates Image Classification Datasets from directory with the
         'train', 'test', 'val' folders.
 
@@ -61,27 +60,31 @@ class ImageClassificationDataset(Dataset):
 
         Args:
             directory (str): base directory with splitted data.
-            transform (transforms): transforms for data preparation and augmentation. Defaults to None.
+            transform (transforms.Compose): transforms for data preparation and augmentation. Defaults to None.
 
         Returns:
-            tuple: a collection of datasets based on subdirectories in provided directory. Tries to return in the following order: "train", "val", "test".
+            tuple: a collection of datasets based on subdirectories in provided directory.
+                Tries to return in the following order: "train", "val", "test".
         """
 
         directory = Path(directory)
+        subfolders = [entry.name for entry in os.scandir(directory) if entry.is_dir()]
 
         # find what folders exactly in main directory
         parts = np.array(["train", "val", "valid", "validation", "test"])
-        indexes = np.intersect1d(np.asarray(os.listdir(directory)), parts, return_indices=True)[2]
+        # get indexes of found any folders
+        indexes = np.intersect1d(np.asarray(subfolders), parts, return_indices=True)[2]
 
         if not len(parts) > 0:
             print(f"Didn't found any of {parts} in {directory}")
             exit()
 
+        # leave in parts only found folders but keep same order
         parts = parts[sorted(indexes)]
-        return (ImageClassificationDataset(directory / i, transform, name=i) for i in parts)
+        return [ImageClassificationDataset(directory / i, transform, name=i) for i in parts]
 
     @classmethod
-    def from_full(cls, directory: str, transform: torchvision.transforms = None, split: float = 0.1, seed: int = 0):
+    def from_full(cls, directory: str, transform: transforms.Compose = None, split: float = 0.1, seed: int = 0):
         """Generates 'train' and 'test' datasets from folder with classes.
 
         Note:
@@ -90,7 +93,7 @@ class ImageClassificationDataset(Dataset):
 
         Args:
             directory (str): base directory with classes not splitted.
-            transform (transforms): transforms that will be applied to datasets. Defaults to None.
+            transform (transforms.Compose): transforms that will be applied to datasets. Defaults to None.
             split (float, optional): train-test split factor. Defaults to 0.1.
             seed (int, optional): random seed for reproducibility. Defaults to 0.
 
@@ -137,7 +140,7 @@ class ImageClassificationDataset(Dataset):
         test_ds.paths = test_paths
         test_ds.targets = torch.tensor([test_ds.class_to_idx[i.parent.name] for i in test_ds.paths])
 
-        return train_ds, test_ds
+        return [train_ds, test_ds]
 
     def display_samples(self, rows: int = 4, cols: int = 4):
         """Displays images on the screen.
@@ -189,8 +192,8 @@ class ImageClassificationDataset(Dataset):
         Draws images on a figure along with class index and class name.
 
         Args:
-            rows (int): number of rows
-            cols (int): number of columns
+            rows (int): number of rows.
+            cols (int): number of columns.
 
         Returns:
             plt.figure: figure with images drawn on it.
@@ -219,11 +222,11 @@ class ImageClassificationDataset(Dataset):
 
     def _draw_transformed(self, rows: int, cols: int) -> plt.figure:
         """Helper function for display_transformed and save_transformed.
-        Draws transformed images on a figure along with class index and class name.
+        Draws transformed images on a figure to see effects of transformations.
 
         Args:
-            rows (int): number of rows
-            cols (int): number of columns
+            rows (int): number of rows.
+            cols (int): number of columns.
 
         Returns:
             plt.figure: figure with images drawn on it.
@@ -235,32 +238,32 @@ class ImageClassificationDataset(Dataset):
         # set up the figure size
         fig = plt.figure(figsize=(cols * 2, rows * 2))
 
+        # get random index once, to see different augmentations on the same picture
+        idx = np.random.randint(0, total_images)
+
         for i in range(num_samples):
             plt.subplot(rows, cols, i + 1)
 
-            # get random index
-            idx = np.random.randint(0, total_images)
-
+            # using __getitem__ to apply transformations
             img, class_idx = self[idx]
-
+            # change channels order (C, H, W) -> (H, W, C)
             img = img.permute(1, 2, 0)
 
             plt.imshow(img)
-            plt.title(f"Class {class_idx}: {self.idx_to_class[class_idx]}")
             plt.axis("off")
             plt.tight_layout()
 
         return fig
 
-    def _check_transform(self, transform: torchvision.transforms):
+    def _check_transform(self, transform: transforms.Compose):
         """For 'train' split transforms will remain the same.
         For 'test' and 'val' splits method will leave only Resize, Normalize, ToTensor.
 
         Args:
-            transform (transforms): list of transforms
+            transform (transforms.Compose): list of transforms.
 
         Returns:
-            transforms: list of new transforms
+            transforms: list of new transforms.
         """
 
         if transform is None:
