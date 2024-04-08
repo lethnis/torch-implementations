@@ -1,8 +1,9 @@
-from math import ceil
 import torch
 from torch import nn
-from torchinfo import summary
 
+from ._options import EfficientNet_options
+
+# structure of MBblocks as described in the paper
 base_model = [
     # expand ratio, channels, repeats, stride, kernel_size
     [1, 16, 1, 1, 3],
@@ -14,7 +15,8 @@ base_model = [
     [6, 320, 1, 1, 3],
 ]
 
-params_dict = {
+# settings for a specific model
+models_dict: dict[EfficientNet_options, list] = {
     # (width_factor, depth_factor, resolution, dropout_rate)
     "b0": (1.0, 1.0, 224, 0.2),
     "b1": (1.0, 1.1, 240, 0.2),
@@ -28,125 +30,166 @@ params_dict = {
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, groups=1):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int,
+        groups: int = 1,
+        act: bool = True,
+        bias: bool = False,
+    ):
+        """Simple conv block with conv -> batchnorm -> silu
+
+        Args:
+            in_channels (int): number of input channels.
+            out_channels (int): number of output channels.
+            kernel_size (int): kernel size.
+            stride (int): stride.
+            groups (int, optional): number of groups. Needed for separable conv. Defaults to 1.
+            act (bool, optional): apply activation or don't. Defaults to True.
+            bias (bool, optional): apply bias or don't. Defaults to False.
+        """
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups=groups, bias=False)
+        padding = kernel_size // 2
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups=groups, bias=bias)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.silu = nn.SiLU()
+        # if no activation just apply Identity (the same)
+        self.silu = nn.SiLU() if act else nn.Identity()
 
     def forward(self, x):
         return self.silu(self.bn(self.conv(x)))
 
 
 class SqueezeExcitation(nn.Module):
-    def __init__(self, in_channels, reduced_dim):
+    def __init__(self, in_channels: int, reduce_ratio: int = 24):
+        """Squeeze and Excitation block. Applies channel-wise attention to input channels.
+        avgpool -> conv -> silu -> conv -> sigmoid. Applies weights to each channels.
+
+        Args:
+            in_channels (int): number of input channels.
+            reduce_ratio (int, optional): multiplier for intermediate channels. Defaults to 24.
+        """
         super().__init__()
-        self.se = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(in_channels, in_channels // reduced_dim, 1),
-            nn.SiLU(),
-            nn.Conv2d(in_channels // reduced_dim, in_channels, 1),
-            nn.Sigmoid(),
-        )
+        reduced_channels = in_channels // reduce_ratio
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.conv1 = nn.Conv2d(in_channels, reduced_channels, 1)
+        self.silu = nn.SiLU()
+        self.conv2 = nn.Conv2d(reduced_channels, in_channels, 1)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        return x * self.se(x)
+        return x * self.sigmoid(self.conv2(self.silu(self.conv1(self.avgpool(x)))))
 
 
-class InvertedResidualBlock(nn.Module):
+class MBBlock(nn.Module):
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel_size: int, stride: int, expansion_ratio: int, reduce_ratio=24
+    ):
+        """Inverted residual block with linear bottleneck. The same as in MobileNetv3.
+
+        Args:
+            in_channels (int): number of input channels.
+            out_channels (int): number of output channels.
+            kernel_size (int): kernel size.
+            stride (int): stride.
+            expansion_ratio (int): multiplier for bottleneck expansion channels.
+            reduce_ratio (int, optional): . Defaults to 24.
+        """
+        super().__init__()
+
+        exp_channels = in_channels * expansion_ratio
+        self.add = in_channels == out_channels and stride == 1
+
+        # point-wise conv to increase channels
+        self.conv1 = ConvBlock(in_channels, exp_channels, 1, 1)
+        # depth-wise conv to extract features
+        self.conv2 = ConvBlock(exp_channels, exp_channels, kernel_size, stride, groups=exp_channels)
+        # get weighted channels
+        self.se = SqueezeExcitation(exp_channels, reduce_ratio)
+        # point-wise conv to reduce channels. No activation!
+        self.conv3 = ConvBlock(exp_channels, out_channels, 1, 1, act=False)
+
+    def forward(self, inputs):
+        x = self.conv3(self.se(self.conv2(self.conv1(inputs))))
+        if self.add:
+            return inputs + x
+        return x
+
+
+class Classifier(nn.Module):
+    def __init__(self, in_channels: int, num_classes: int, dropout_rate: float):
+        """Classifier head for the model. Gets final features, applies avgpool and dropout.
+
+        Args:
+            in_channels (int): number of input channels.
+            num_classes (int): number of classes.
+            dropout_rate (float): dropout rate.
+        """
+        super().__init__()
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.fc = nn.Linear(in_channels, num_classes)
+
+    def forward(self, x):
+        return self.fc(self.dropout(torch.flatten(self.pool(x), 1)))
+
+
+class EfficientNetv1(nn.Module):
     def __init__(
         self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride,
-        padding,
-        expand_ratio,
-        reduction=2,
-        survival_prob=0.8,
+        width_factor: float,
+        depth_factor: float,
+        resolution: int = 224,
+        dropout_rate: float = 0.5,
+        in_channels: int = 3,
+        num_classes: int = 1000,
     ):
+        """EffitientNetv1 as described in the original paper.
+        Original paper: https://arxiv.org/pdf/1905.11946.pdf.
+        Paper walkthrough and implementation: https://www.youtube.com/watch?v=eFMmqjDbcvw.
+
+        Args:
+            width_factor (float): multiplier for number of channels.
+            depth_factor (float): multiplier for number of layers.
+            resolution (int, optional): one side of an image. Needed to sanity check. Defaults to 224.
+            dropout_rate (float, optional): dropout rate. Defaults to 0.5.
+            in_channels (int, optional): number of input channels (image channels). Defaults to 3.
+            num_classes (int, optional): number of classes. Defaults to 1000.
+        """
         super().__init__()
-        self.survival_prob = survival_prob
-        self.use_residual = in_channels == out_channels and stride == 1
-        hidden_dim = in_channels * expand_ratio
-        self.expand = in_channels != hidden_dim
-        reduced_dim = int(in_channels / reduction)
 
-        if self.expand:
-            self.expand_conv = ConvBlock(in_channels, hidden_dim, 3, 1, 1)
+        # input size to compare with inputs in forward method
+        self.input_size = torch.Size((in_channels, resolution, resolution))
 
-        self.conv = nn.Sequential(
-            ConvBlock(hidden_dim, hidden_dim, kernel_size, stride, padding, hidden_dim),
-            SqueezeExcitation(hidden_dim, reduced_dim),
-            nn.Conv2d(hidden_dim, out_channels, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
-        )
+        # add first layer as described in paper
+        features = [ConvBlock(in_channels, 32, 3, 2)]
+        in_channels = 32
 
-    def stochastic_depth(self, x):
-        if not self.training:
-            return x
-        binary_tensor = torch.rand(x.shape[0], 1, 1, 1, device=x.device) < self.survival_prob
-        return torch.div(x, self.survival_prob) * binary_tensor
-
-    def forward(self, x):
-        in_x = x
-        x = self.expand_conv(x) if self.expand else x
-
-        if self.use_residual:
-            return self.stochastic_depth(self.conv(x)) + in_x
-        else:
-            return self.conv(x)
-
-
-class EfficientNet(nn.Module):
-    def __init__(self, version, num_classes):
-        super().__init__()
-        width_factor, depth_factor, resolution, dropout_rate = version
-        last_channels = ceil(1280 * width_factor)
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.features = self.create_features(width_factor, depth_factor, last_channels)
-        self.classifier = nn.Sequential(
-            nn.Dropout(dropout_rate),
-            nn.Linear(last_channels, num_classes),
-        )
-
-    def create_features(self, width_factor, depth_factor, last_channels):
-
-        channels = int(32 * width_factor)
-        features = []
-        features.append(ConvBlock(3, channels, 3, 2, 1))
-
-        in_channels = channels
-
-        for expand_ratio, channels, repeats, stride, kernel_size in base_model:
-            out_channels = 4 * ceil(int(channels * width_factor) / 4)
-            layers_repeats = ceil(repeats * depth_factor)
-
-            for layer in range(layers_repeats):
-                features.append(
-                    InvertedResidualBlock(
-                        in_channels,
-                        out_channels,
-                        kernel_size,
-                        stride=stride if layer == 0 else 1,
-                        padding=kernel_size // 2,
-                        expand_ratio=expand_ratio,
-                    )
-                )
+        # for every block in the base model
+        for exp_ratio, out_channels, repeats, stride, kernel_size in base_model:
+            out_channels = int(width_factor * out_channels)
+            repeats = max(int(depth_factor * repeats), 1)
+            for i in range(repeats):
+                # stride will be applied only in first iteration
+                features.append(MBBlock(in_channels, out_channels, kernel_size, stride if i == 0 else 1, exp_ratio))
                 in_channels = out_channels
 
-        features.append(ConvBlock(in_channels, last_channels, 1, 1, 0))
-        return nn.Sequential(*features)
+        # add last channel
+        last_channels = int(width_factor * 1280)
+        features.append(nn.Conv2d(out_channels, last_channels, 1))
+
+        self.features = nn.Sequential(*features)
+
+        # add classifier
+        self.classifier = Classifier(last_channels, num_classes, dropout_rate)
 
     def forward(self, x):
-        x = self.avgpool(self.features(x))
-        return self.classifier(torch.flatten(x, 1))
+        # compare shapes
+        assert x.shape[1:] == self.input_size, f"Required image size: {self.input_size}. Got {x.shape[1:]}"
+        return self.classifier(self.features(x))
 
-
-model = EfficientNet(params_dict["b0"], 1000)
-
-x = torch.randn((1, 3, 224, 224))
-
-print(model(x).shape)
-
-summary(model, input_data=x)
+    @classmethod
+    def from_options(cls, model_name: EfficientNet_options, in_channels=3, num_classes=1000):
+        return EfficientNetv1(*models_dict[model_name], in_channels=in_channels, num_classes=num_classes)

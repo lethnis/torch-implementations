@@ -1,10 +1,10 @@
 import torch
 from torch import nn
 
-from ._options import Densenet_options
+from ._options import DenseNet_options
 
 # settings for original paper models
-DENSENET_OPTIONS: dict[Densenet_options, list] = {
+DENSENET_OPTIONS: dict[DenseNet_options, list] = {
     # list of: number of repetitions, growth factor, compression factor, is bottleneck
     "DenseNet121": [[6, 12, 24, 16], 32, 0.5, True],
     "DenseNet169": [[6, 12, 32, 32], 32, 0.5, True],
@@ -234,7 +234,7 @@ class DenseNet(nn.Module):
 
     @classmethod
     def from_options(
-        cls, options: Densenet_options, in_channels: int = 3, num_classes: int = 1000, start_channels: int = 64
+        cls, options: DenseNet_options, in_channels: int = 3, num_classes: int = 1000, start_channels: int = 64
     ):
         """Creates an instance of ResNet from the original paper.
         Options are: repetitions in every DenseBlock, growth factor, compression factor, is bottleneck.

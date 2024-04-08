@@ -1,11 +1,7 @@
-from models import DenseNet
 from torchinfo import summary
 from torchview import draw_graph
 import torch
+from torchvision import models
 
-model: DenseNet = DenseNet([4, 4, 4], 16, 0.5, False, 3, 10, 16)
-
-x = torch.randn(1, 3, 128, 128)
-
-summary(model, input_data=x, depth=2)
-draw_graph(model, x, expand_nested=True, save_graph=True, depth=3)
+model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+summary(model, (1, 3, 224, 224), depth=3)

@@ -1,11 +1,11 @@
 import torch
 from torch import nn
 
-from ._options import Resnet_options
+from ._options import ResNet_options
 
 
 # setting for original models
-RESNET_OPTIONS: dict[Resnet_options, list] = {
+RESNET_OPTIONS: dict[ResNet_options, list] = {
     # list of: number of channels, number of repetitions, expansion factor, is Bottleneck
     "ResNet18": [[64, 128, 256, 512], [2, 2, 2, 2], 1, False],
     "ResNet34": [[64, 128, 256, 512], [3, 4, 6, 3], 1, False],
@@ -275,7 +275,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     @classmethod
-    def from_options(cls, options: Resnet_options, in_channels: int = 3, num_classes: int = 1000):
+    def from_options(cls, options: ResNet_options, in_channels: int = 3, num_classes: int = 1000):
         """Creates an instance of ResNet from original paper.
         Options are: channels list, repetitions list, expansion factor, is bottleneck
 
