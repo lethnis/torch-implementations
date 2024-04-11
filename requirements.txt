@@ -6,6 +6,8 @@ torchsummary
 torchinfo
 torchmetrics
 
+tensorboard
+
 mlxtend
 
 graphviz
