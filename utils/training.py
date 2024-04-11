@@ -1,5 +1,6 @@
 import os
 import time
+import torch.utils.tensorboard
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
@@ -70,6 +71,7 @@ class Trainer:
         accuracy_fn: torchmetrics.Accuracy,
         writer: Writer,
         epochs: int,
+        summary_writer: torch.utils.tensorboard.writer.SummaryWriter,
     ):
         """Main training loop. Train and test model, record loss and accuracy,
         print progress to the command line.
@@ -92,12 +94,18 @@ class Trainer:
             # run training
             train_loss, train_acc = self.train_step(model, self.train_dataloader, loss_fn, optimizer, accuracy_fn, bar)
 
+            summary_writer.add_scalars("Accuracy", {"train_acc": train_acc}, epoch)
+            summary_writer.add_scalars("Loss", {"train_loss": train_loss}, epoch)
+
             if self.val_dataloader is not None:
                 # reinitialize progress bar for validating
                 bar = tqdm(ncols=120, desc=f"Epoch {epoch+1}/{epochs}", leave=False)
 
                 # run validating
                 val_loss, val_acc = self.test_step(model, self.val_dataloader, loss_fn, accuracy_fn, bar)
+
+                summary_writer.add_scalars("Accuracy", {"val_acc": val_acc}, epoch)
+                summary_writer.add_scalars("Loss", {"val_loss": val_loss}, epoch)
 
                 print(
                     f"Epoch {epoch+1}/{epochs} | time: {time.time()-start:.2f}sec. | "
