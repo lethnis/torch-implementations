@@ -95,7 +95,7 @@ class MBBlock(nn.Module):
             kernel_size (int): kernel size.
             stride (int): stride.
             expansion_ratio (int): multiplier for bottleneck expansion channels.
-            reduce_ratio (int, optional): . Defaults to 24.
+            reduce_ratio (int, optional): divisor for SqueezeExcitation block. Defaults to 24.
         """
         super().__init__()
 
