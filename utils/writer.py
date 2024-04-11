@@ -109,20 +109,24 @@ class Writer:
             bool: True if model is getting better else False.
         """
 
+        # if best.pt does not exist return True to save it. Works only for first epoch.
+        if not os.path.exists(os.path.join(self.project_path, "best.pt")):
+            return True
+
         # loss should be at lowest overall to return True
         if monitor == "val_loss":
-            if self.history.get("val_loss", None) is not None and len(self.history["val_loss"]) > 1:
+            if self.history.get("val_loss", None) is not None:
                 if self.history["val_loss"][-1] < min(self.history["val_loss"][:-1]):
                     return True
 
         # accuracy should be at highest overall to return True
         elif monitor == "val_acc":
-            if self.history.get("val_acc", None) is not None and len(self.history["val_acc"]) > 1:
+            if self.history.get("val_acc", None) is not None:
                 if self.history["val_acc"][-1] > max(self.history["val_acc"][:-1]):
                     return True
 
         elif monitor == "val_accuracy":
-            if self.history.get("val_accuracy", None) is not None and len(self.history["val_accuracy"]) > 1:
+            if self.history.get("val_accuracy", None) is not None:
                 if self.history["val_accuracy"][-1] > max(self.history["val_accuracy"][:-1]):
                     return True
 
